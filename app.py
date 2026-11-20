@@ -161,8 +161,8 @@ def books():
     if request.method == "POST":
         title = request.form.get("title", "").strip()
         isbn = request.form.get("isbn", "").strip()
-        author_id = request.form.get("author_id") or None
-        publisher_id = request.form.get("publisher_id") or None
+        author_name = request.form.get("author_name", "").strip()
+        publisher_name = request.form.get("publisher_name", "").strip()
         category_id = request.form.get("category_id") or None
         published_year = request.form.get("published_year") or None
         copies = max(1, int(request.form.get("copies", 1)))
@@ -171,19 +171,42 @@ def books():
             flash("Title and ISBN are required fields.", "danger")
         else:
             conn = get_db()
-            cur = conn.cursor()
+            cur = conn.cursor(dictionary=True)
             try:
+                # Resolve or add publisher
+                publisher_id = None
+                if publisher_name:
+                    cur.execute("SELECT publisher_id FROM publishers WHERE LOWER(publisher_name) = LOWER(%s)", (publisher_name,))
+                    pub = cur.fetchone()
+                    if pub:
+                        publisher_id = pub["publisher_id"]
+                    else:
+                        cur.execute("INSERT INTO publishers(publisher_name) VALUES(%s)", (publisher_name,))
+                        publisher_id = cur.lastrowid
+
+                # Insert book
                 cur.execute("""INSERT INTO books(isbn, title, publisher_id, category_id, published_year)
                                VALUES(%s, %s, %s, %s, %s)""",
                             (isbn, title, publisher_id, category_id, published_year))
                 book_id = cur.lastrowid
-                if author_id:
+
+                # Resolve or add author
+                if author_name:
+                    cur.execute("SELECT author_id FROM authors WHERE LOWER(author_name) = LOWER(%s)", (author_name,))
+                    auth = cur.fetchone()
+                    if auth:
+                        author_id = auth["author_id"]
+                    else:
+                        cur.execute("INSERT INTO authors(author_name) VALUES(%s)", (author_name,))
+                        author_id = cur.lastrowid
                     cur.execute("INSERT INTO book_authors(book_id, author_id) VALUES(%s, %s)", (book_id, author_id))
+
+                # Create physical inventory copies
                 for idx in range(copies):
                     cur.execute("INSERT INTO book_copies(book_id, accession_no, status) VALUES(%s, %s, 'AVAILABLE')",
-                                (book_id, f"LIB-ACC-{book_id}-{idx + 1:02d}"))
+                                (book_id, f"LIB-ACC-{book_id:02d}-{idx + 1:02d}"))
                 conn.commit()
-                flash(f"Book '{title}' and {copies} copies added successfully.", "success")
+                flash(f"Book '{title}' with {copies} copies added successfully.", "success")
             except Error as e:
                 conn.rollback()
                 flash(f"Could not add book: {e}", "danger")
@@ -210,10 +233,8 @@ def books():
                        ORDER BY b.book_id DESC""",
                     (f"%{search}%", f"%{search}%", f"%{search}%"))
 
-    authors = query_db("SELECT author_id, author_name FROM authors ORDER BY author_name")
-    publishers = query_db("SELECT publisher_id, publisher_name FROM publishers ORDER BY publisher_name")
     categories = query_db("SELECT category_id, category_name FROM categories ORDER BY category_name")
-    return render_template("books.html", books=rows, authors=authors, publishers=publishers, categories=categories, q=search, active_page="books")
+    return render_template("books.html", books=rows, categories=categories, q=search, active_page="books")
 
 @app.route("/books/delete/<int:book_id>", methods=["POST"])
 @login_required
@@ -455,6 +476,52 @@ def reports():
                          ORDER BY borrow_count DESC LIMIT 10""")
 
     return render_template("reports.html", overdue=overdue, popular=popular, active=active, active_page="reports")
+
+@app.route("/database")
+@login_required
+def database_inspector():
+    tables_list = [
+        {"name": "books", "label": "Books", "desc": "Master catalogue containing titles, publishers, and categories."},
+        {"name": "members", "label": "Members", "desc": "Registered patrons, students, faculty, and scholars."},
+        {"name": "loans", "label": "Loans", "desc": "Active and historical book circulation and checkout transactions."},
+        {"name": "fines", "label": "Fines", "desc": "Automated overdue penalty records, dues, and payment audit."},
+        {"name": "book_copies", "label": "Book Copies", "desc": "Physical accessioned copies and shelf availability tracking."},
+        {"name": "authors", "label": "Authors", "desc": "Writers, scholars, and biographical origins."},
+        {"name": "publishers", "label": "Publishers", "desc": "Publication houses, imprints, and locations."},
+        {"name": "categories", "label": "Categories", "desc": "Subject taxonomy, academic disciplines, and genres."},
+        {"name": "book_authors", "label": "Book Authors", "desc": "Composite junction table representing many-to-many author mappings."},
+        {"name": "reservations", "label": "Reservations", "desc": "Patron queue and reservation requests for held titles."},
+        {"name": "admins", "label": "Admins", "desc": "Privileged staff accounts with hashed credentials."}
+    ]
+
+    selected_table = request.args.get("table", "books")
+    if selected_table not in [t["name"] for t in tables_list]:
+        selected_table = "books"
+
+    counts = {}
+    for t in tables_list:
+        res = query_db(f"SELECT COUNT(*) AS n FROM `{t['name']}`")
+        counts[t["name"]] = res[0]["n"] if res else 0
+
+    columns_info = query_db(f"SHOW COLUMNS FROM `{selected_table}`")
+    
+    if selected_table == "admins":
+        rows = query_db("SELECT admin_id, username, is_active, created_at, '••••••••' AS password_hash FROM admins")
+    else:
+        rows = query_db(f"SELECT * FROM `{selected_table}` LIMIT 100")
+
+    current_meta = next(t for t in tables_list if t["name"] == selected_table)
+
+    return render_template(
+        "database.html",
+        tables=tables_list,
+        selected_table=selected_table,
+        current_meta=current_meta,
+        counts=counts,
+        columns=columns_info,
+        rows=rows,
+        active_page="database"
+    )
 
 @app.errorhandler(404)
 def not_found(_):

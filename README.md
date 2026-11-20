@@ -14,6 +14,7 @@ A full-stack Library Management System built with **Flask**, **MySQL**, and a re
   - Return processing with automated late penalty assessment (₹5.00/day).
 - **Financial Accounts & Fines Ledger**: Real-time tracking of assessed penalties, collected payments, and outstanding balances.
 - **Audit & Analytics Reports**: Pre-built operational intelligence for overdue accounts, high-frequency borrows, and active patrons.
+- **Database Architecture & ER Model**: Live inspector for all 11 database tables with schema breakdown, row counts, live data view, and an interactive 3NF Entity-Relationship Diagram.
 - **Self-Healing Startup**: Automatically checks for database and table presence on launch.
 
 ---

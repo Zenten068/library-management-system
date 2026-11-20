@@ -36,24 +36,14 @@
       </div>
 
       <div>
-        <label>Primary Author
-          <select name="author_id">
-            <option value="">Choose registered author</option>
-            {% for a in authors %}
-            <option value="{{ a.author_id }}">{{ a.author_name }} ({{ a.country or 'Global' }})</option>
-            {% endfor %}
-          </select>
+        <label>Author Name *
+          <input type="text" name="author_name" required placeholder="e.g. Robert C. Martin">
         </label>
       </div>
 
       <div>
-        <label>Publisher
-          <select name="publisher_id">
-            <option value="">Select publishing house</option>
-            {% for p in publishers %}
-            <option value="{{ p.publisher_id }}">{{ p.publisher_name }}</option>
-            {% endfor %}
-          </select>
+        <label>Publisher Name
+          <input type="text" name="publisher_name" placeholder="e.g. Pearson India">
         </label>
       </div>
 
